@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GitHub Webhook Events Dashboard</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+          Cantarell, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+
+      .header {
+        background: white;
+        padding: 30px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+        text-align: center;
+      }
+
+      .header h1 {
+        color: #333;
+        margin-bottom: 10px;
+        font-size: 2em;
+      }
+
+      .header p {
+        color: #666;
+        font-size: 0.9em;
+      }
+
+      .status {
+        display: inline-block;
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 0.85em;
+        margin-top: 10px;
+      }
+
+      .status.active {
+        background: #10b981;
+        color: white;
+      }
+
+      .status.inactive {
+        background: #ef4444;
+        color: white;
+      }
+
+      .events-container {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        padding: 20px;
+        min-height: 400px;
+      }
+
+      .events-list {
+        list-style: none;
+      }
+
+      .event-item {
+        padding: 20px;
+        margin-bottom: 15px;
+        background: #f9fafb;
+        border-left: 4px solid #667eea;
+        border-radius: 5px;
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+        animation: fadeIn 0.5s ease-in;
+      }
+
+      .event-item:hover {
+        transform: translateX(5px);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .event-item.new {
+        border-left-color: #10b981;
+        background: #f0fdf4;
+      }
+
+      .event-message {
+        font-size: 1.1em;
+        color: #333;
+        line-height: 1.6;
+      }
+
+      .event-meta {
+        margin-top: 10px;
+        font-size: 0.85em;
+        color: #666;
+      }
+
+      .event-action {
+        display: inline-block;
+        padding: 3px 10px;
+        border-radius: 12px;
+        font-size: 0.75em;
+        font-weight: 600;
+        margin-right: 10px;
+      }
+
+      .action-push {
+        background: #3b82f6;
+        color: white;
+      }
+
+      .action-pull-request {
+        background: #f59e0b;
+        color: white;
+      }
+
+      .action-merge {
+        background: #10b981;
+        color: white;
+      }
+
+      .loading {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #999;
+      }
+
+      .empty-state h2 {
+        margin-bottom: 10px;
+        color: #666;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .refresh-indicator {
+        text-align: center;
+        margin-top: 15px;
+        font-size: 0.85em;
+        color: #999;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>GitHub Webhook Events</h1>
+        <p>Real-time repository activity monitor</p>
+        <div class="status active" id="status">● Active</div>
+      </div>
+
+      <div class="events-container">
+        <div id="loading" class="loading">Loading events...</div>
+        <div id="empty-state" class="empty-state" style="display: none">
+          <h2>No events yet</h2>
+          <p>Webhook events will appear here once they are received.</p>
+        </div>
+        <ul class="events-list" id="events-list" style="display: none"></ul>
+        <div class="refresh-indicator" id="refresh-indicator"></div>
+      </div>
+    </div>
+
+    <script>
+      let lastUpdateTime = null;
+      let knownEventIds = new Set();
+
+      function formatTimestamp(timestamp) {
+        return timestamp;
+      }
+
+      function updateRefreshIndicator() {
+        const now = new Date();
+        const indicator = document.getElementById("refresh-indicator");
+        indicator.textContent = `Last updated: ${now.toLocaleTimeString()}`;
+      }
+
+      function fetchEvents() {
+        fetch("/api/events")
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.error) {
+              console.error("Error:", data.error);
+              document.getElementById("status").textContent = "● Error";
+              document.getElementById("status").className = "status inactive";
+              return;
+            }
+
+            document.getElementById("status").textContent = "● Active";
+            document.getElementById("status").className = "status active";
+            document.getElementById("loading").style.display = "none";
+
+            const events = data.events || [];
+            const eventsList = document.getElementById("events-list");
+            const emptyState = document.getElementById("empty-state");
+
+            if (events.length === 0) {
+              eventsList.style.display = "none";
+              emptyState.style.display = "block";
+              return;
+            }
+
+            emptyState.style.display = "none";
+            eventsList.style.display = "block";
+
+            eventsList.innerHTML = "";
+
+            events.forEach((event) => {
+              const isNew = !knownEventIds.has(event.id);
+              if (isNew) {
+                knownEventIds.add(event.id);
+              }
+
+              const li = document.createElement("li");
+              li.className = `event-item ${isNew ? "new" : ""}`;
+
+              const actionClass = event.action.toLowerCase().replace("_", "-");
+
+              li.innerHTML = `
+                            <div class="event-message">${escapeHtml(event.display_message)}</div>
+                            <div class="event-meta">
+                                <span class="event-action action-${actionClass}">${event.action}</span>
+                                <span>Request ID: ${escapeHtml(event.request_id)}</span>
+                            </div>
+                        `;
+
+              eventsList.appendChild(li);
+            });
+
+            setTimeout(() => {
+              document.querySelectorAll(".event-item.new").forEach((item) => {
+                item.classList.remove("new");
+              });
+            }, 2000);
+
+            updateRefreshIndicator();
+          })
+          .catch((error) => {
+            console.error("Fetch error:", error);
+            document.getElementById("status").textContent = "● Error";
+            document.getElementById("status").className = "status inactive";
+          });
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      fetchEvents();
+
+      setInterval(fetchEvents, 15000);
+
+      setInterval(updateRefreshIndicator, 1000);
+    </script>
+  </body>
+</html>
